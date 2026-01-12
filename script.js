@@ -441,10 +441,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${badgeHtml} ${t.title}
                     </div>
                     <i id="chevron-${t.id}" class="fas fa-chevron-down" style="color:#aaa;"></i>
-                    <!-- 개별 삭제 버튼 (전파 방지 적용됨) -->
-                    <button class="action-btn delete-btn" data-id="${t.id}">
-                        <i class="fas fa-trash"></i>
-                    </button>
+                    
+                    <div class="action-buttons-group" style="margin-left: auto; display: flex; gap: 5px;">
+                        <!-- 개별 저장 버튼 -->
+                        <button class="action-btn save-btn" onclick="event.stopPropagation(); saveSingleTodo(${t.id})" title="이 항목만 저장">
+                            <i class="fas fa-save"></i>
+                        </button>
+                        <!-- 개별 삭제 버튼 -->
+                        <button class="action-btn delete-btn" data-id="${t.id}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
                 </div>
 
                 <div id="timeline-${t.id}" class="timeline-area" style="display:none;">
@@ -480,11 +487,33 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ==========================================
-    // 5. 데이터 백업 및 복구 (Phase 9)
+    // 5. 데이터 백업 및 복구 (Phase 9 & 9.5)
     // ==========================================
     const backupBtn = document.getElementById('backup-btn');
     const restoreBtn = document.getElementById('restore-btn');
     const restoreInput = document.getElementById('restore-input');
+
+    // 개별 항목 백업 함수 (전역 노출 필요)
+    window.saveSingleTodo = function(id) {
+        const todo = todos.find(t => t.id === id);
+        if (!todo) return;
+        
+        // 배열 형태로 감싸서 저장 (복구 로직 통일성을 위해)
+        const dataStr = JSON.stringify([todo], null, 2);
+        downloadJSON(dataStr, `할일_${todo.title.substring(0, 10).replace(/[/\\?%*:|"<>]/g, '_')}_${new Date().toISOString().slice(0,10)}.json`);
+    };
+
+    function downloadJSON(dataStr, fileName) {
+        const blob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    }
 
     if (backupBtn) {
         backupBtn.addEventListener('click', () => {
@@ -493,23 +522,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             const dataStr = JSON.stringify(todos, null, 2);
-            const blob = new Blob([dataStr], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-            
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = `할일백업_${new Date().toISOString().slice(0,10)}.json`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(url);
-            alert("백업 파일이 저장되었습니다.\n이 파일을 잘 보관해주세요!");
+            downloadJSON(dataStr, `전체할일백업_${new Date().toISOString().slice(0,10)}.json`);
+            alert("전체 데이터가 백업되었습니다.");
         });
     }
 
     if (restoreBtn && restoreInput) {
         restoreBtn.addEventListener('click', () => {
-            if (confirm("데이터를 복구하면 현재 기록된 내용은 모두 사라지고, 백업 파일 내용으로 덮어씌워집니다.\n계속하시겠습니까?")) {
+            if (confirm("파일을 불러와서 현재 목록에 추가(병합)하시겠습니까?\n(중복된 항목은 최신 내용으로 업데이트됩니다.)")) {
                 restoreInput.click();
             }
         });
@@ -521,20 +541,46 @@ document.addEventListener('DOMContentLoaded', () => {
             const reader = new FileReader();
             reader.onload = (event) => {
                 try {
-                    const loadedTodos = JSON.parse(event.target.result);
-                    if (Array.isArray(loadedTodos)) {
-                        todos = loadedTodos;
-                        saveTodos();
-                        renderTodos();
-                        alert("데이터 복구가 완료되었습니다!");
+                    const loadedData = JSON.parse(event.target.result);
+                    let newItems = [];
+                    
+                    // 배열인지 단일 객체인지 확인하여 정규화
+                    if (Array.isArray(loadedData)) {
+                        newItems = loadedData;
+                    } else if (typeof loadedData === 'object' && loadedData !== null) {
+                        newItems = [loadedData];
                     } else {
                         throw new Error("올바르지 않은 데이터 형식");
                     }
+
+                    let addedCount = 0;
+                    let updatedCount = 0;
+
+                    newItems.forEach(newItem => {
+                        // 유효성 검사 (ID, Title 필수)
+                        if (!newItem.id || !newItem.title) return;
+
+                        const existingIndex = todos.findIndex(t => t.id === newItem.id);
+                        if (existingIndex !== -1) {
+                            // 이미 존재하면 업데이트 (선택 사항: 사용자에게 물어볼 수도 있으나 편의상 덮어쓰기)
+                            todos[existingIndex] = newItem;
+                            updatedCount++;
+                        } else {
+                            // 없으면 추가
+                            todos.unshift(newItem);
+                            addedCount++;
+                        }
+                    });
+
+                    saveTodos();
+                    renderTodos();
+                    alert(`복구 완료!\n- 추가된 항목: ${addedCount}개\n- 업데이트된 항목: ${updatedCount}개`);
+
                 } catch (err) {
                     alert("파일을 읽을 수 없습니다. 올바른 백업 파일인지 확인해주세요.");
                     console.error(err);
                 }
-                // 입력 초기화 (같은 파일 다시 선택 가능하도록)
+                // 입력 초기화
                 restoreInput.value = '';
             };
             reader.readAsText(file);
