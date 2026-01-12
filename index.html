@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>오늘의 할일</title>
+    <!-- Google Fonts: Noto Sans KR, Poppins -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&family=Poppins:wght@400;600&display=swap" rel="stylesheet">
+    <!-- Font Awesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="background-gradient"></div>
+    <div class="container">
+        <header>
+            <h1>오늘의 할일</h1>
+            <p id="date-display">2024년 1월 1일 월요일</p>
+        </header>
+
+        <div class="input-section glass-panel">
+            <input type="text" id="todo-input" placeholder="새로운 업무를 입력하세요... (예: 1분기 보고서 작성)">
+            <button id="add-btn"><i class="fas fa-plus"></i></button>
+        </div>
+
+        <div class="controls-section">
+            <button id="export-btn" class="secondary-btn"><i class="fas fa-file-excel"></i> 엑셀로 내보내기</button>
+            <button id="clear-completed-btn" class="secondary-btn btn-danger-soft"><i class="fas fa-trash-alt"></i> 완료 항목 모두 삭제</button>
+        </div>
+
+        <div class="list-section">
+            <ul id="todo-list">
+                <!-- 할일 목록이 여기에 추가됩니다 -->
+            </ul>
+        </div>
+        
+        <div class="empty-state" id="empty-state">
+            <i class="fas fa-clipboard-list"></i>
+            <p>할일이 없습니다.<br>새로운 목표를 세워보세요!</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
