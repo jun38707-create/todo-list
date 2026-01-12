@@ -1,385 +1,472 @@
+/**
+ * 할일 관리 애플리케이션 (통합 리팩토링 버전)
+ * - 기능: 할일 CRUD, 할일 로그(히스토리), 파일 첨부, D-Day 알림, 엑셀 내보내기, 일괄 삭제
+ * - 호환성: 로컬 파일(file://) 실행 환경 최적화
+ */
+
 document.addEventListener('DOMContentLoaded', () => {
-    // DOM 요소 선택
-    const todoInput = document.getElementById('todo-input');
-    const addBtn = document.getElementById('add-btn');
-    const todoList = document.getElementById('todo-list');
-    const emptyState = document.getElementById('empty-state');
-    const dateDisplay = document.getElementById('date-display');
-    const exportBtn = document.getElementById('export-btn');
-    const clearCompletedBtn = document.getElementById('clear-completed-btn');
+    // ==========================================
+    // 1. 상태 관리 & 초기화
+    // ==========================================
+    let todos = [];
+    
+    const ui = {
+        input: document.getElementById('todo-input'),
+        addBtn: document.getElementById('add-btn'),
+        list: document.getElementById('todo-list'),
+        emptyState: document.getElementById('empty-state'),
+        dateDisplay: document.getElementById('date-display'),
+        exportBtn: document.getElementById('export-btn'),
+        clearBtn: document.getElementById('clear-completed-btn'),
+        modal: null,
+        modalImg: null
+    };
 
-    // 이미지 모달
-    const modal = document.createElement('div');
-    modal.className = 'image-modal';
-    modal.innerHTML = '<img class="modal-content" id="modal-img">';
-    document.body.appendChild(modal);
-    modal.addEventListener('click', () => modal.style.display = 'none');
-
-    function openModal(src) {
-        document.getElementById('modal-img').src = src;
-        modal.style.display = 'flex';
-    }
-
-    // 날짜 표시
-    function updateDate() {
-        const now = new Date();
-        const options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' };
-        dateDisplay.textContent = now.toLocaleDateString('ko-KR', options);
-    }
-    updateDate();
-
+    // 이미지 뷰어 모달 초기화
+    initModal();
+    // 날짜 표시 초기화
+    updateDateDisplay();
     // 데이터 로드
-    let todos = loadTodos();
-
-    function loadTodos() {
-        const stored = localStorage.getItem('todos');
-        if (!stored) return [];
-        try {
-            const parsed = JSON.parse(stored);
-            if (parsed.length > 0 && !parsed[0].logs) {
-                return parsed.map(item => ({
-                    id: item.id,
-                    title: item.text,
-                    status: item.completed ? '완료' : '진행중',
-                    dueDate: null, // 기존 데이터는 마감일 없음
-                    logs: [{ date: new Date(item.id).toLocaleString('ko-KR'), action: '생성 (자동변환)', note: '기존 데이터' }]
-                }));
-            }
-            return parsed;
-        } catch (e) {
-            return [];
-        }
-    }
-
+    loadTodos();
+    // 화면 렌더링
     renderTodos();
 
-    // 이벤트 리스너
-    addBtn.addEventListener('click', addTodo);
-    todoInput.addEventListener('keypress', (e) => {
+    // ==========================================
+    // 2. 이벤트 리스너 등록
+    // ==========================================
+    ui.addBtn.addEventListener('click', addTodo);
+    ui.input.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') addTodo();
     });
-    exportBtn.addEventListener('click', exportToCSV);
-    clearCompletedBtn.addEventListener('click', clearCompletedTodos);
+    ui.exportBtn.addEventListener('click', exportToCSV);
+    ui.clearBtn.addEventListener('click', clearCompletedTodos);
 
-    // [Core] 스마트 날짜 파싱 (자연어 처리)
-    function parseDateFromText(text) {
+    // ==========================================
+    // 3. 핵심 로직
+    // ==========================================
+
+    function loadTodos() {
+        try {
+            const stored = localStorage.getItem('todos');
+            if (stored) {
+                todos = JSON.parse(stored);
+                // 데이터 무결성 검사 및 보정 (구버전 호환)
+                todos = todos.map(t => ({
+                    id: t.id || Date.now(),
+                    title: t.title || t.text || '제목 없음',
+                    status: t.status || (t.completed ? '완료' : '진행중'),
+                    dueDate: t.dueDate || null,
+                    logs: Array.isArray(t.logs) ? t.logs : [{ 
+                        date: new Date().toLocaleString('ko-KR'), 
+                        action: '초기화', 
+                        note: '데이터 복구됨' 
+                    }]
+                }));
+            }
+        } catch (e) {
+            console.error("데이터 로드 실패:", e);
+            todos = [];
+        }
+    }
+
+    function saveTodos() {
+        try {
+            localStorage.setItem('todos', JSON.stringify(todos));
+        } catch (e) {
+            alert("저장 공간이 부족합니다. 사진을 줄이거나 불필요한 항목을 삭제해주세요.");
+        }
+    }
+
+    // 스마트 날짜 파싱 (오늘, 금일, 내일, M월 D일, N일후)
+    function parseSmartDate(text) {
         let title = text;
         let dueDate = null;
-        let targetDate = new Date(); // 오늘
-
-        // 1. "M월 D일" 또는 "M월 D일까지" 패턴 (예: 1월 15일, 2월 8일까지)
-        // 공백 허용: 1월15일, 1 월 15 일 등
-        const monthDayMatch = text.match(/(\d+)\s*월\s*(\d+)\s*일\s*(까지)?/);
-
-        if (monthDayMatch) {
-            const month = parseInt(monthDayMatch[1]);
-            const day = parseInt(monthDayMatch[2]);
-            const currentYear = targetDate.getFullYear();
-
-            // 월은 0부터 시작하므로 -1
-            targetDate.setFullYear(currentYear, month - 1, day);
-            
-            // 만약 입력한 날짜가 과거라면 (예: 5월에 '1월 1일' 입력), 그냥 과거 날짜로 둠 (D+ 표시됨)
-            // 사용자 의도가 '내년'일 수도 있지만, 보통은 실수를 바로잡거나 과거 기록용이므로 자동 보정은 하지 않음.
-            
-            dueDate = targetDate;
-            // "1월 15일까지" 부분을 제거
-            title = text.replace(monthDayMatch[0], '').trim();
-        }
-        // 2. "N일후", "N일뒤" 패턴 (예: 3일후)
-        else {
-            const daysAfterMatch = text.match(/(\d+)일\s*(후|뒤)/);
-            if (daysAfterMatch) {
-                const days = parseInt(daysAfterMatch[1]);
-                targetDate.setDate(targetDate.getDate() + days);
-                dueDate = targetDate;
-                title = text.replace(daysAfterMatch[0], '').trim();
-            }
-            // 3. "내일" 패턴
-            else if (text.includes("내일")) {
-                targetDate.setDate(targetDate.getDate() + 1);
-                dueDate = targetDate;
-                title = text.replace("내일", '').trim();
-            }
-            // 4. "모레" 패턴
-            else if (text.includes("모레")) {
-                targetDate.setDate(targetDate.getDate() + 2);
-                dueDate = targetDate;
-                title = text.replace("모레", '').trim();
-            }
-        }
-
-        // 날짜 포맷팅 (YYYY-MM-DD)
-        const formattedDueDate = dueDate ? dueDate.toISOString().split('T')[0] : null;
-        return { title, dueDate: formattedDueDate };
-    }
-
-    // [Core] D-Day 계산
-    function getDDay(dueDateString) {
-        if (!dueDateString) return null;
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const due = new Date(dueDateString);
-        due.setHours(0, 0, 0, 0);
-
-        const diffTime = due - today;
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        if (diffDays === 0) return { label: 'D-Day', class: 'd-day-urgent' };
-        if (diffDays === 1) return { label: 'D-1', class: 'd-day-urgent' };
-        if (diffDays > 0 && diffDays <= 3) return { label: `D-${diffDays}`, class: 'd-day-warning' };
-        if (diffDays > 3) return { label: `D-${diffDays}`, class: 'd-day-normal' };
-        if (diffDays < 0) return { label: `D+${Math.abs(diffDays)}`, class: 'd-day-past' };
+        let target = new Date(); // 오늘
         
-        return null;
+        let found = false;
+
+        // 패턴 0: 오늘/금일
+        if (title.match(/오늘|금일/)) {
+            dueDate = new Date();
+            title = title.replace(/오늘|금일/g, '').trim();
+            found = true;
+        }
+        
+        // 패턴 1: M월 D일(까지)
+        if (!found) {
+            const matches = title.match(/(\d+)\s*월\s*(\d+)\s*일\s*(까지)?/);
+            if (matches) {
+                const m = parseInt(matches[1]) - 1;
+                const d = parseInt(matches[2]);
+                target.setMonth(m, d);
+                // 만약 과거 날짜라면 내년으로 할지? (현재는 과거도 그대로 둠 -> D+N 으로 표시됨)
+                dueDate = target;
+                title = title.replace(matches[0], '').trim();
+                found = true;
+            }
+        }
+
+        // 패턴 2: N일 후/뒤
+        if (!found) {
+            const matches = title.match(/(\d+)\s*일\s*(후|뒤)/);
+            if (matches) {
+                const days = parseInt(matches[1]);
+                target.setDate(target.getDate() + days);
+                dueDate = target;
+                title = title.replace(matches[0], '').trim();
+                found = true;
+            }
+        }
+
+        // 패턴 3: 내일/모레
+        if (!found) {
+            if (title.includes("내일")) {
+                target.setDate(target.getDate() + 1);
+                dueDate = target;
+                title = title.replace("내일", '').trim();
+                found = true;
+            } else if (title.includes("모레")) {
+                target.setDate(target.getDate() + 2);
+                dueDate = target;
+                title = title.replace("모레", '').trim();
+                found = true;
+            }
+        }
+
+        // 마감일 포맷팅 (YYYY-MM-DD)
+        const dateStr = dueDate ? 
+            `${dueDate.getFullYear()}-${String(dueDate.getMonth()+1).padStart(2,'0')}-${String(dueDate.getDate()).padStart(2,'0')}` 
+            : null;
+
+        return { title, dateStr };
     }
 
-    // [Core] 업무 추가
     function addTodo() {
-        const rawText = todoInput.value.trim();
-        if (rawText === '') {
-            alert('업무 내용을 입력해주세요!');
+        const rawText = ui.input.value.trim();
+        if (!rawText) {
+            alert("할 일을 입력해주세요.");
             return;
         }
 
-        // 스마트 파싱 실행
-        const { title, dueDate } = parseDateFromText(rawText);
-
-        const now = new Date();
-        const formattedDate = now.toLocaleString('ko-KR');
+        const { title, dateStr } = parseSmartDate(rawText);
+        const nowStr = new Date().toLocaleString('ko-KR');
 
         const newTodo = {
             id: Date.now(),
-            title: title,
-            status: '진행중',
-            dueDate: dueDate, // 마감일 저장
+            title: title || rawText, // 파싱 후 빈 문자열 되면 원본 사용
+            status: '진행중', // 기본 상태
+            dueDate: dateStr,
             logs: [{
-                date: formattedDate,
+                date: nowStr,
                 action: '생성',
-                note: dueDate ? `마감일 자동 설정: ${dueDate}` : '신규 업무 등록'
+                note: dateStr ? `마감일 설정: ${dateStr}` : '신규 업무'
             }]
         };
 
         todos.unshift(newTodo);
         saveTodos();
         renderTodos();
-        todoInput.value = '';
-        todoInput.focus();
+        ui.input.value = '';
+        ui.input.focus();
     }
 
-    // 나머지 Core 함수들 (save, delete, toggleStatus) 유지
     function clearCompletedTodos() {
-        const completedCount = todos.filter(t => t.status === '완료').length;
-        if (completedCount === 0) {
-            alert('완료된 항목이 없습니다.');
+        const completed = todos.filter(t => t.status === '완료');
+        if (completed.length === 0) {
+            alert("삭제할 완료된 항목이 없습니다.");
             return;
         }
-        if (confirm(`완료된 업무 ${completedCount}건을 모두 삭제하시겠습니까?`)) {
+
+        if (confirm(`완료된 항목 ${completed.length}개를 모두 삭제하시겠습니까?`)) {
             todos = todos.filter(t => t.status !== '완료');
             saveTodos();
             renderTodos();
         }
     }
 
-    window.deleteTodo = (id) => {
-        if (confirm('삭제하시겠습니까?')) {
-            todos = todos.filter(todo => todo.id !== id);
-            saveTodos();
-            renderTodos();
-        }
-    };
-
-    window.toggleStatus = (id) => {
-        const work = todos.find(t => t.id === id);
-        if (work) {
-            const isComplete = work.status === '완료';
-            work.status = isComplete ? '진행중' : '완료';
-            addLogInternal(work, isComplete ? '재진행' : '완료', isComplete ? '상태 변경' : '완료 처리');
-            saveTodos();
-            renderTodos();
-        }
-    };
-
-    // [Core] 로그/파일 추가 (이전과 동일)
-    window.addLog = async (id) => {
-        const input = document.getElementById(`log-input-${id}`);
-        const fileInput = document.getElementById(`log-file-${id}`);
-        const note = input.value.trim();
-        const file = fileInput.files[0];
-
-        if (!note && !file) {
-            alert("내용을 입력하거나 파일을 선택해주세요.");
+    function exportToCSV() {
+        if (todos.length === 0) {
+            alert("내보낼 데이터가 없습니다.");
             return;
         }
-        const work = todos.find(t => t.id === id);
-        if (!work) return;
 
-        let imageData = null;
+        // CSV 헤더
+        let csv = "\uFEFF날짜,D-Day,업무명,상태,로그일시,내용\n";
+        
+        todos.forEach(t => {
+            const dDay = t.dueDate ? `마감:${t.dueDate}` : '-';
+            const safeTitle = t.title.replace(/,/g, " ").replace(/[\r\n]+/g, " ");
+            
+            t.logs.forEach(log => {
+                const safeNote = (log.note || "").replace(/,/g, " ").replace(/[\r\n]+/g, " ");
+                const hasImg = log.image ? "(사진있음)" : "";
+                // CSV 행 포맷
+                csv += `${t.logs[0].date},${dDay},${safeTitle},${t.status},${log.date},${safeNote} ${hasImg}\n`;
+            });
+        });
+
+        // 다운로드 실행 (로컬 호환성: encodeURIComponent 방식)
+        const uri = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+        
+        const link = document.createElement("a");
+        link.href = uri;
+        link.style.display = "none";
+        link.download = `업무일지_${new Date().toISOString().slice(0,10)}.csv`;
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    // ==========================================
+    // 4. UI 렌더링 & 헬퍼
+    // ==========================================
+
+    function updateDateDisplay() {
+        const now = new Date();
+        ui.dateDisplay.textContent = now.toLocaleDateString('ko-KR', { 
+            year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' 
+        });
+    }
+
+    function initModal() {
+        const div = document.createElement('div');
+        div.className = 'image-modal';
+        div.style.display = 'none';
+        div.innerHTML = '<img class="modal-content" id="modal-img-tag">';
+        div.addEventListener('click', () => div.style.display = 'none');
+        document.body.appendChild(div);
+        
+        ui.modal = div;
+        ui.modalImg = div.querySelector('img');
+    }
+
+    window.openImage = (dataSrc) => {
+        if (ui.modal && ui.modalImg) {
+            ui.modalImg.src = dataSrc;
+            ui.modal.style.display = 'flex';
+        }
+    };
+
+    // 전역 함수로 노출 (onclick 핸들러용)
+    window.deleteItem = (id) => {
+        if (confirm("이 항목을 정말 삭제하시겠습니까?")) {
+            todos = todos.filter(t => t.id !== id);
+            saveTodos();
+            renderTodos();
+        }
+    };
+
+    window.toggleItemStatus = (id) => {
+        const t = todos.find(item => item.id === id);
+        if (t) {
+            const wasDone = t.status === '완료';
+            t.status = wasDone ? '진행중' : '완료';
+            addLogInternal(t, wasDone ? '재진행' : '완료', wasDone ? '다시 진행함' : '완료 처리함');
+            saveTodos();
+            renderTodos();
+        }
+    };
+
+    window.toggleTimelineArea = (id) => {
+        const area = document.getElementById(`timeline-${id}`);
+        const icon = document.getElementById(`chevron-${id}`);
+        if (!area) return;
+        
+        if (area.style.display === 'block') {
+            area.style.display = 'none';
+            if(icon) icon.className = "fas fa-chevron-down";
+        } else {
+            area.style.display = 'block';
+            if(icon) icon.className = "fas fa-chevron-up";
+        }
+    };
+
+    window.submitLog = async (id) => {
+        const noteInput = document.getElementById(`note-${id}`);
+        const fileInput = document.getElementById(`file-${id}`);
+        if (!noteInput) return;
+
+        const rawNote = noteInput.value.trim();
+        const file = fileInput && fileInput.files[0];
+
+        if (!rawNote && !file) {
+            alert("내용이나 사진을 입력해주세요.");
+            return;
+        }
+
+        const t = todos.find(item => item.id === id);
+        if (!t) return;
+
+        let imgData = null;
         if (file) {
             try {
-                imageData = await resizeImage(file);
+                imgData = await compressImage(file);
             } catch (err) {
-                alert('이미지 처리 오류: ' + err.message);
+                alert("이미지 처리 실패");
                 return;
             }
         }
-        addLogInternal(work, '업데이트', note, imageData);
-        input.value = '';
-        fileInput.value = '';
+
+        // [New] 로그 내용에서 날짜 파싱하여 마감일 업데이트
+        let finalNote = rawNote;
+        let actionParams = '기록';
+        
+        if (rawNote) {
+            const { title: parsedText, dateStr } = parseSmartDate(rawNote);
+            if (dateStr) {
+                // 날짜가 발견되면 마감일 업데이트
+                if (t.dueDate !== dateStr) {
+                    t.dueDate = dateStr;
+                    finalNote = `${parsedText} (마감일 변경됨)`;
+                    actionParams = '일정변경';
+                } else {
+                    finalNote = parsedText;
+                }
+            }
+        }
+
+        addLogInternal(t, actionParams, finalNote, imgData);
         saveTodos();
         renderTodos();
+        
+        // 입력창 초기화
+        noteInput.value = '';
+        if (fileInput) fileInput.value = '';
     };
 
-    function resizeImage(file) {
+    function addLogInternal(todo, action, note, img = null) {
+        todo.logs.push({
+            date: new Date().toLocaleString('ko-KR'),
+            action: action,
+            note: note,
+            image: img
+        });
+    }
+
+    function compressImage(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.readAsDataURL(file);
-            reader.onload = (event) => {
+            reader.onload = (e) => {
                 const img = new Image();
-                img.src = event.target.result;
+                img.src = e.target.result;
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    let width = img.width;
-                    let height = img.height;
-                    const MAX_WIDTH = 800;
-                    const MAX_HEIGHT = 800;
-                    if (width > height) {
-                        if (width > MAX_WIDTH) {
-                            height *= MAX_WIDTH / width;
-                            width = MAX_WIDTH;
-                        }
-                    } else {
-                        if (height > MAX_HEIGHT) {
-                            width *= MAX_HEIGHT / height;
-                            height = MAX_HEIGHT;
-                        }
-                    }
-                    canvas.width = width;
-                    canvas.height = height;
+                    let w = img.width;
+                    let h = img.height;
+                    const MAX = 800; // 최대 800px
+
+                    if (w > h && w > MAX) { h *= MAX/w; w = MAX; }
+                    else if (h > w && h > MAX) { w *= MAX/h; h = MAX; }
+
+                    canvas.width = w;
+                    canvas.height = h;
                     const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, width, height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.7)); 
+                    ctx.drawImage(img, 0, 0, w, h);
+                    resolve(canvas.toDataURL('image/jpeg', 0.7));
                 };
-                img.onerror = reject;
             };
             reader.onerror = reject;
         });
     }
 
-    function addLogInternal(workObj, action, note, image = null) {
+    function getDDayLabel(dateStr) {
+        if (!dateStr) return null;
         const now = new Date();
-        workObj.logs.push({
-            date: now.toLocaleString('ko-KR'),
-            action: action,
-            note: note,
-            image: image
-        });
+        now.setHours(0,0,0,0);
+        const due = new Date(dateStr);
+        due.setHours(0,0,0,0);
+
+        const diff = (due - now) / (1000 * 60 * 60 * 24); // 일 단위 차이
+
+        if (diff === 0) return { text: "D-Day", color: "red", urgent: true };
+        if (diff > 0 && diff <= 3) return { text: `D-${diff}`, color: "orange", urgent: false };
+        if (diff > 3) return { text: `D-${diff}`, color: "green", urgent: false };
+        if (diff < 0) return { text: `D+${Math.abs(diff)}`, color: "gray", urgent: false };
+        
+        // 내일(D-1)은 D-1로 명시
+        if (diff === 1) return { text: "D-1", color: "red", urgent: true };
+
+        return { text: `D-${diff}`, color: "green", urgent: false }; 
     }
 
-    window.toggleTimeline = (id) => {
-        const timeline = document.getElementById(`timeline-${id}`);
-        const icon = document.getElementById(`icon-${id}`);
-        if (timeline.style.display === 'block') {
-            timeline.style.display = 'none';
-            icon.classList.remove('fa-chevron-up');
-            icon.classList.add('fa-chevron-down');
-        } else {
-            timeline.style.display = 'block';
-            icon.classList.remove('fa-chevron-down');
-            icon.classList.add('fa-chevron-up');
-        }
-    };
-
-    window.viewImage = (btn) => {
-        const src = btn.dataset.src;
-        if(src) openModal(src);
-    };
-
-    // [UI] 렌더링 (D-Day 배지 추가)
     function renderTodos() {
-        todoList.innerHTML = '';
+        ui.list.innerHTML = '';
         if (todos.length === 0) {
-            emptyState.style.display = 'block';
-        } else {
-            emptyState.style.display = 'none';
-            // 날짜순 정렬 (마감일 임박한 순)
-            todos.sort((a, b) => {
-                if (!a.dueDate) return 1;
-                if (!b.dueDate) return -1;
-                return new Date(a.dueDate) - new Date(b.dueDate);
-            });
+            ui.emptyState.style.display = 'block';
+            return;
+        }
+        ui.emptyState.style.display = 'none';
 
-            todos.forEach(todo => {
-                // D-Day 계산
-                const dDayInfo = getDDay(todo.dueDate);
-                const dDayBadge = dDayInfo ? `<span class="d-day-badge ${dDayInfo.class}">${dDayInfo.label}</span>` : '';
+        // 정렬: 마감일 급한 순 -> 날짜 없는 거 -> 완료된 거 맨 뒤
+        const sorted = [...todos].sort((a, b) => {
+            if (a.status === '완료' && b.status !== '완료') return 1;
+            if (a.status !== '완료' && b.status === '완료') return -1;
+            if (!a.dueDate) return 1;
+            if (!b.dueDate) return -1;
+            return new Date(a.dueDate) - new Date(b.dueDate);
+        });
 
-                const logsHtml = todo.logs.map(log => `
-                    <div class="log-entry">
-                        <div class="log-date">${log.date} <span style="font-weight:bold; color:#6a11cb;">[${log.action}]</span></div>
-                        <div class="log-content">
-                            ${log.note ? `<p>${log.note}</p>` : ''}
-                            ${log.image ? `<img src="${log.image}" class="attachment-thumbnail" onclick="viewImage(this)" data-src="${log.image}" title="클릭하여 확대">` : ''}
-                        </div>
+        sorted.forEach(t => {
+            const isDone = t.status === '완료';
+            const dDay = getDDayLabel(t.dueDate);
+            
+            let badgeHtml = '';
+            if (dDay && !isDone) {
+                const styleClass = dDay.color === 'red' ? 'd-day-urgent' : 
+                                   dDay.color === 'orange' ? 'd-day-warning' : 
+                                   dDay.color === 'gray' ? 'd-day-past' : 'd-day-normal';
+                badgeHtml = `<span class="d-day-badge ${styleClass}">${dDay.text}</span>`;
+            }
+
+            const logsHtml = t.logs.map(log => `
+                <div class="log-entry">
+                    <div class="log-date">${log.date} <span style="font-weight:bold; color:#6a11cb;">[${log.action}]</span></div>
+                    <div class="log-content">
+                        ${log.note ? `<p>${log.note}</p>` : ''}
+                        ${log.image ? `<img src="${log.image}" class="attachment-thumbnail" onclick="openImage('${log.image}')">` : ''}
                     </div>
-                `).join('');
+                </div>
+            `).join('');
 
-                const li = document.createElement('li');
-                li.className = 'todo-container';
-                const isDone = todo.status === '완료';
+            const el = document.createElement('li');
+            el.className = 'todo-container';
+            el.innerHTML = `
+                <div class="todo-header" onclick="toggleTimelineArea(${t.id})">
+                    <div class="todo-status ${isDone ? 'status-done' : 'status-check'}">
+                        ${t.status}
+                    </div>
+                    <div class="todo-title" style="${isDone ? 'text-decoration:line-through; color:#aaa;' : ''}">
+                        ${badgeHtml} ${t.title}
+                    </div>
+                    <i id="chevron-${t.id}" class="fas fa-chevron-down" style="color:#aaa;"></i>
+                    <!-- 개별 삭제 버튼 (전파 방지) -->
+                    <button class="action-btn delete-btn" onclick="event.stopPropagation(); deleteItem(${t.id})">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
 
-                li.innerHTML = `
-                    <div class="todo-header" onclick="toggleTimeline(${todo.id})">
-                        <div class="todo-status ${isDone ? 'status-done' : 'status-check'}">
-                            ${todo.status}
-                        </div>
-                        <div class="todo-title" style="${isDone ? 'text-decoration: line-through; color: #999;' : ''}">
-                            ${dDayBadge} ${todo.title}
-                        </div>
-                        <i id="icon-${todo.id}" class="fas fa-chevron-down" style="color:#aaa;"></i>
-                        <button class="action-btn delete-btn" onclick="event.stopPropagation(); deleteTodo(${todo.id})">
-                            <i class="fas fa-trash"></i>
+                <div id="timeline-${t.id}" class="timeline-area" style="display:none;">
+                    <div class="logs-container">
+                        ${logsHtml}
+                    </div>
+                    <div class="add-log-box">
+                        <input type="text" id="note-${t.id}" class="log-input" placeholder="메모 입력...">
+                        <label class="file-upload-label">
+                            <input type="file" id="file-${t.id}" class="file-upload-input" accept="image/*">
+                            <i class="fas fa-camera"></i>
+                        </label>
+                        <button class="log-btn" onclick="submitLog(${t.id})">기록</button>
+                    </div>
+                    <div style="margin-top:10px; text-align:right;">
+                        <button style="border:none; background:none; cursor:pointer; color:${isDone?'#2ecc71':'#aaa'};" onclick="toggleItemStatus(${t.id})">
+                            <i class="fas ${isDone ? 'fa-undo' : 'fa-check'}"></i> ${isDone ? '다시 진행하기' : '완료 처리'}
                         </button>
                     </div>
-                    <div id="timeline-${todo.id}" class="timeline-area">
-                        <div class="logs-container">${logsHtml}</div>
-                        <div class="add-log-box">
-                            <input type="text" id="log-input-${todo.id}" class="log-input" placeholder="진행 상황 입력...">
-                            <label class="file-upload-label"><input type="file" id="log-file-${todo.id}" class="file-upload-input" accept="image/*"><i class="fas fa-camera"></i></label>
-                            <button class="log-btn" onclick="addLog(${todo.id})">기록</button>
-                        </div>
-                        <div style="margin-top: 10px; text-align: right;">
-                             <button style="background:none; border:none; cursor:pointer;" onclick="toggleStatus(${todo.id})">
-                                <i class="fas ${isDone ? 'fa-undo' : 'fa-check-circle'}"></i> 완료 처리
-                             </button>
-                        </div>
-                    </div>
-                `;
-                todoList.appendChild(li);
-            });
-        }
-    }
-
-    function saveTodos() {
-        try { localStorage.setItem('todos', JSON.stringify(todos)); } 
-        catch (e) { alert('저장 용량 부족'); }
-    }
-
-    function exportToCSV() {
-        if (todos.length === 0) return alert('데이터 없음');
-        let csvContent = "\uFEFF날짜,D-Day,업무명,상태,로그일시,내용\n";
-        todos.forEach(todo => {
-            const dDayStr = todo.dueDate ? `마감:${todo.dueDate}` : '-';
-            todo.logs.forEach(log => {
-                csvContent += `${todo.logs[0].date},${dDayStr},${todo.title},${todo.status},${log.date},${(log.note||"").replace(/,/g," ")}\n`;
-            });
+                </div>
+            `;
+            ui.list.appendChild(el);
         });
-        const encodedUri = encodeURI("data:text/csv;charset=utf-8," + csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", "업무일지.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
     }
 });
