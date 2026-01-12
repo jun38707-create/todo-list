@@ -441,8 +441,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${badgeHtml} ${t.title}
                     </div>
                     <i id="chevron-${t.id}" class="fas fa-chevron-down" style="color:#aaa;"></i>
-                    <!-- 개별 삭제 버튼 (전파 방지) -->
-                    <button class="action-btn delete-btn" onclick="event.stopPropagation(); deleteItem(${t.id})">
+                    <!-- 개별 삭제 버튼 (전파 방지 적용됨) -->
+                    <button class="action-btn delete-btn" data-id="${t.id}">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
@@ -467,6 +467,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
             ui.list.appendChild(el);
+        });
+
+        // [New] 이벤트 리스너 동적 할당 (인라인 onclick 문제 해결)
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation(); // 부모(todo-header) 클릭 이벤트 전파 중단
+                const id = parseInt(btn.getAttribute('data-id'));
+                deleteItem(id);
+            });
         });
     }
 });
