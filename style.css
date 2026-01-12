@@ -512,3 +512,194 @@ header p {
     70% { transform: scale(1.05); box-shadow: 0 0 0 5px rgba(255, 71, 87, 0); }
     100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 71, 87, 0); }
 }
+
+/* =========================================
+   Phase 11: Premium Calendar Design
+   ========================================= */
+
+/* 뷰 전환 버튼 스타일 (Glassmorphism) */
+.view-btn {
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white; /* 텍스트 흰색 */
+    padding: 10px 16px;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    backdrop-filter: blur(5px);
+    font-weight: 500;
+}
+
+.view-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: translateY(-2px);
+}
+
+.view-btn.active {
+    background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+    border-color: transparent;
+    box-shadow: 0 4px 15px rgba(37, 117, 252, 0.4);
+    font-weight: 700;
+}
+
+/* 달력 뷰 컨테이너 */
+#calendar-view {
+    padding: 25px;
+    color: #333; /* 내부 텍스트 기본색 */
+    background: rgba(255, 255, 255, 0.6); /* 더 밝은 유리 효과 */
+    backdrop-filter: blur(15px);
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    margin-top: 20px;
+    animation: fadeIn 0.5s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* 달력 헤더 */
+.calendar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+}
+
+.calendar-header h2 {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: #2c3e50;
+    letter-spacing: -0.5px;
+}
+
+.nav-btn {
+    background: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(0,0,0,0.05);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    color: #555;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.nav-btn:hover {
+    background: #6a11cb;
+    color: white;
+    transform: scale(1.1);
+}
+
+/* 요일 헤더 */
+.calendar-grid-header {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    text-align: center;
+    font-weight: 600;
+    margin-bottom: 15px;
+    color: #7f8c8d;
+    font-size: 0.9rem;
+}
+
+/* 일요일(빨강), 토요일(파랑) 강조 */
+.calendar-grid-header div:nth-child(1) { color: #ff6b6b; }
+.calendar-grid-header div:nth-child(7) { color: #54a0ff; }
+
+/* 달력 그리드 */
+.calendar-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+}
+
+/* 날짜 셀 스타일 */
+.calendar-cell {
+    background: rgba(255, 255, 255, 0.4);
+    min-height: 90px;
+    border-radius: 12px;
+    padding: 8px;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    display: flex;
+    flex-direction: column;
+}
+
+.calendar-cell:hover {
+    background: rgba(255, 255, 255, 0.8);
+    transform: translateY(-2px);
+    box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+    z-index: 10;
+}
+
+.calendar-cell.today {
+    background: rgba(106, 17, 203, 0.1);
+    border: 2px solid #6a11cb;
+}
+
+.calendar-cell.today .date-number {
+    background: #6a11cb;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+}
+
+.calendar-cell.empty {
+    background: transparent;
+    border: none;
+    cursor: default;
+}
+
+.date-number {
+    font-weight: 600;
+    font-size: 0.9rem;
+    color: #555;
+    margin-bottom: 5px;
+    display: inline-block;
+}
+
+/* 주말 날짜 색상 */
+.calendar-cell:nth-child(7n+1) .date-number { color: #ff6b6b; } /* 일 */
+.calendar-cell:nth-child(7n) .date-number { color: #54a0ff; }   /* 토 */
+.calendar-cell.today:nth-child(7n+1) .date-number,
+.calendar-cell.today:nth-child(7n) .date-number { color: white; } /* 오늘이 주말일 땐 흰색 */
+
+/* 할일 아이템 (Cell 내부) */
+.calendar-todo-item {
+    font-size: 0.75rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: linear-gradient(90deg, #6a11cb, #2575fc);
+    color: white;
+    padding: 3px 6px;
+    border-radius: 6px;
+    margin-bottom: 3px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    opacity: 0.9;
+    transition: opacity 0.2s;
+}
+
+.calendar-todo-item:hover {
+    opacity: 1;
+    z-index: 20;
+    position: relative; /* 호버 시 가려짐 방지 */
+}
+
+.calendar-todo-item.done {
+    background: #bdc3c7;
+    text-decoration: line-through;
+    opacity: 0.6;
+}
