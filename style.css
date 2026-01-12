@@ -392,6 +392,43 @@ header p {
     display: none;
 }
 
+#add-btn:hover {
+    background: #5a4ad1;
+    transform: scale(1.05); /* 버튼 살짝 커지는 효과 */
+}
+
+#voice-btn {
+    width: 50px;
+    background: #ff7675;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    margin-right: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#voice-btn:hover {
+    background: #d63031;
+    transform: scale(1.05);
+}
+
+/* 음성 인식 중일 때 애니메이션 */
+#voice-btn.listening {
+    background: #d63031;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(214, 48, 49, 0.7); }
+    70% { transform: scale(1.1); box-shadow: 0 0 0 10px rgba(214, 48, 49, 0); }
+    100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(214, 48, 49, 0); }
+}
+
 .attached-image-preview {
     margin-top: 5px;
     max-width: 100%;

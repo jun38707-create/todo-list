@@ -581,9 +581,62 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error(err);
                 }
                 // 입력 초기화
-                restoreInput.value = '';
             };
             reader.readAsText(file);
         });
+    }
+
+    // ==========================================
+    // 6. 음성 비서 (Phase 10)
+    // ==========================================
+    const voiceBtn = document.getElementById('voice-btn');
+    
+    // Web Speech API 지원 여부 확인
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognition && voiceBtn) {
+        const recognition = new SpeechRecognition();
+        recognition.lang = 'ko-KR'; // 한국어 설정
+        recognition.interimResults = false; // 중간 결과 대신 최종 결과만
+        recognition.maxAlternatives = 1;
+
+        recognition.onstart = () => {
+            voiceBtn.classList.add('listening');
+        };
+
+        recognition.onend = () => {
+            voiceBtn.classList.remove('listening');
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            
+            // 기존 입력값이 있으면 뒤에 이어붙이기
+            const currentVal = ui.input.value;
+            ui.input.value = currentVal ? `${currentVal} ${transcript}` : transcript;
+            ui.input.focus();
+        };
+
+        recognition.onerror = (event) => {
+            console.error('음성 인식 오류:', event.error);
+            voiceBtn.classList.remove('listening');
+            if (event.error === 'not-allowed') {
+                alert("마이크 사용 권한이 필요합니다.");
+            }
+        };
+
+        voiceBtn.addEventListener('click', () => {
+            // 이미 듣고 있다면 멈춤, 아니면 시작
+            if (voiceBtn.classList.contains('listening')) {
+                recognition.stop();
+            } else {
+                recognition.start();
+            }
+        });
+    } else {
+        // 미지원 브라우저 처리
+        if (voiceBtn) {
+            voiceBtn.style.display = 'none';
+        }
     }
 });
