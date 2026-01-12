@@ -478,4 +478,66 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
+
+    // ==========================================
+    // 5. 데이터 백업 및 복구 (Phase 9)
+    // ==========================================
+    const backupBtn = document.getElementById('backup-btn');
+    const restoreBtn = document.getElementById('restore-btn');
+    const restoreInput = document.getElementById('restore-input');
+
+    if (backupBtn) {
+        backupBtn.addEventListener('click', () => {
+            if (todos.length === 0) {
+                alert("저장할 데이터가 없습니다.");
+                return;
+            }
+            const dataStr = JSON.stringify(todos, null, 2);
+            const blob = new Blob([dataStr], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `할일백업_${new Date().toISOString().slice(0,10)}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            alert("백업 파일이 저장되었습니다.\n이 파일을 잘 보관해주세요!");
+        });
+    }
+
+    if (restoreBtn && restoreInput) {
+        restoreBtn.addEventListener('click', () => {
+            if (confirm("데이터를 복구하면 현재 기록된 내용은 모두 사라지고, 백업 파일 내용으로 덮어씌워집니다.\n계속하시겠습니까?")) {
+                restoreInput.click();
+            }
+        });
+
+        restoreInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const loadedTodos = JSON.parse(event.target.result);
+                    if (Array.isArray(loadedTodos)) {
+                        todos = loadedTodos;
+                        saveTodos();
+                        renderTodos();
+                        alert("데이터 복구가 완료되었습니다!");
+                    } else {
+                        throw new Error("올바르지 않은 데이터 형식");
+                    }
+                } catch (err) {
+                    alert("파일을 읽을 수 없습니다. 올바른 백업 파일인지 확인해주세요.");
+                    console.error(err);
+                }
+                // 입력 초기화 (같은 파일 다시 선택 가능하도록)
+                restoreInput.value = '';
+            };
+            reader.readAsText(file);
+        });
+    }
 });
