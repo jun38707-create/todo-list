@@ -633,10 +633,133 @@ document.addEventListener('DOMContentLoaded', () => {
                 recognition.start();
             }
         });
-    } else {
-        // 미지원 브라우저 처리
-        if (voiceBtn) {
             voiceBtn.style.display = 'none';
         }
     }
+
+    // ==========================================
+    // 7. 달력 보기 (Phase 11)
+    // ==========================================
+    let currentCalendarDate = new Date();
+    let isCalendarView = false;
+    
+    // UI 요소
+    const todoList = document.getElementById('todo-list');
+    const calendarView = document.getElementById('calendar-view');
+    const btnListView = document.getElementById('btn-list-view');
+    const btnCalendarView = document.getElementById('btn-calendar-view');
+    const calendarTitle = document.getElementById('calendar-title');
+    const calendarGrid = document.getElementById('calendar-grid');
+    const prevMonthBtn = document.getElementById('prev-month');
+    const nextMonthBtn = document.getElementById('next-month');
+
+    // 뷰 전환 초기화
+    if (btnListView && btnCalendarView) {
+        btnListView.addEventListener('click', () => toggleView('list'));
+        btnCalendarView.addEventListener('click', () => toggleView('calendar'));
+    }
+
+    // 달력 네비게이션 초기화
+    if (prevMonthBtn && nextMonthBtn) {
+        prevMonthBtn.addEventListener('click', () => {
+            currentCalendarDate.setMonth(currentCalendarDate.getMonth() - 1);
+            renderCalendar();
+        });
+        nextMonthBtn.addEventListener('click', () => {
+            currentCalendarDate.setMonth(currentCalendarDate.getMonth() + 1);
+            renderCalendar();
+        });
+    }
+
+    function toggleView(view) {
+        if (view === 'list') {
+            isCalendarView = false;
+            todoList.style.display = 'block';
+            calendarView.style.display = 'none';
+            btnListView.classList.add('active');
+            btnCalendarView.classList.remove('active');
+            renderTodos(); // 리스트 갱신
+        } else {
+            isCalendarView = true;
+            todoList.style.display = 'none';
+            calendarView.style.display = 'block';
+            btnListView.classList.remove('active');
+            btnCalendarView.classList.add('active');
+            renderCalendar(); // 달력 렌더링
+        }
+    }
+
+    function renderCalendar() {
+        if (!isCalendarView) return;
+
+        const year = currentCalendarDate.getFullYear();
+        const month = currentCalendarDate.getMonth(); // 0-based
+
+        // 타이틀 업데이트 (예: 2026년 1월)
+        calendarTitle.textContent = `${year}년 ${month + 1}월`;
+
+        // 달력 그리드 초기화
+        calendarGrid.innerHTML = '';
+
+        // 해당 월의 첫 날과 마지막 날 정보
+        const firstDayOfMonth = new Date(year, month, 1);
+        const lastDayOfMonth = new Date(year, month + 1, 0);
+        
+        const firstDayOfWeek = firstDayOfMonth.getDay(); // 0(일) ~ 6(토)
+        const daysInMonth = lastDayOfMonth.getDate();
+
+        // 앞쪽 빈 칸 채우기
+        for (let i = 0; i < firstDayOfWeek; i++) {
+            const emptyCell = document.createElement('div');
+            emptyCell.className = 'calendar-cell empty';
+            calendarGrid.appendChild(emptyCell);
+        }
+
+        // 날짜 채우기
+        const today = new Date();
+        const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+
+        for (let day = 1; day <= daysInMonth; day++) {
+            const cellDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            
+            const cell = document.createElement('div');
+            cell.className = 'calendar-cell';
+            if (isCurrentMonth && day === today.getDate()) {
+                cell.classList.add('today');
+            }
+
+            // 날짜 숫자
+            const dateNum = document.createElement('span');
+            dateNum.className = 'date-number';
+            dateNum.textContent = day;
+            cell.appendChild(dateNum);
+
+            // 해당 날짜의 할일 찾기
+            // 데이터 포맷이 YYYY-MM-DD 인지 확인해야 함. (script.js 상단 parseSmartDate 함수 참고)
+            const daysTodos = todos.filter(t => t.dueDate === cellDateStr);
+
+            daysTodos.forEach(t => {
+                const todoItem = document.createElement('div');
+                todoItem.className = `calendar-todo-item ${t.status === '완료' ? 'done' : ''}`;
+                todoItem.textContent = t.title;
+                todoItem.title = t.title; // 툴팁
+                
+                // 클릭 시 해당 항목 상세보기 (간단히 로그 열기 효과는 어렵지만, 알림으로 표시하거나 리스트 뷰로 이동 가능)
+                todoItem.addEventListener('click', (e) => {
+                     e.stopPropagation();
+                     // TODO: 상세 보기 모달 구현 (현재는 간단히 제목만 표시)
+                     alert(`[${t.dueDate}]\n${t.title}\n상태: ${t.status}`);
+                });
+
+                cell.appendChild(todoItem);
+            });
+
+            // 빈 셀 클릭 시 해당 날짜로 할일 추가? (추후 개선 사항)
+            
+            calendarGrid.appendChild(cell);
+        }
+    }
+    
+    // 외부에 renderCalendar 노출 (데이터 변경 시 갱신 필요할 수 있음)
+    window.renderCalendar = renderCalendar;
 });
