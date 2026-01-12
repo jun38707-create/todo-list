@@ -633,6 +633,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 recognition.start();
             }
         });
+    } else {
+        // 미지원 브라우저 처리
+        if (voiceBtn) {
             voiceBtn.style.display = 'none';
         }
     }
